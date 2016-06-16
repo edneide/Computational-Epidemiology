@@ -1,0 +1,156 @@
+---
+title: "Basic ICMs with EpiModel"
+author: "Edneide Ramalho"
+date: "1 de junho de 2016"
+output: pdf_document
+---
+
+
+#Introdução
+
+\begin{itemize}
+\item ICMs: individual contact models
+\end{itemize}
+
+Os modelos de contatos individuais (ICMs) estocásticos são designados a serem microsimulações baseadas em agentes, análogas aos modelos compartimentais  determinísticos (DCMs) solucionados com a função `dcm`.  
+
+As diferenças principais entre as duas classes de modelos são:
+\begin{enumerate}
+\item \textbf{Parâmetros selecionados aleatoriamente:} estes são modelos estocásticos nos quais todas as taxas de riscos que governam as transições entre estados são escolhidas aleatoriamente a partir de distribuições sumarizadas por suas taxas ou probabilidades, incluindo as distribuições normal, Poisson e binomial.   
+\item \textbf{O tempo é discreto:} ICMs são simulados no tempo discreto em contraste com o DCMs. No tempo discreto, tudo dentro de um passo de tempo acontece como uma série de processos, dado que não há ocorrência instantânea de eventos independente de outros, o que é possível em modelos de tempo contínuo. Há o potencial de se introduzir alguma artificialidade dentro do modelo se a unidade do passo de tempo for grande porque transições que deveriam ocorrer dentro daquele passo de tempo pode não necessiariamente ser considerada independente. Em geral, é necessário ter cuidado quando se simula qualquer modelo em tempo discreto com unidades de passo de tempo longas ou parâmetros com grandes taxas, dado o potencial de riscos competitivos.   
+\item \textbf{As unidades são individuais:} ICMs simula a propagação de doenças sobre uma população simulada de elementos individualmente identificáveis; em contraste, os modelos DCMs trata a população como sendo toda agregada que é infinitamente divisível, com elementos individuais nesta população que nem são identificáveis nem acessíveis para os propósitos da modelagem. As implicações disto são relativamente menores se as simulações estocásticas ocorrem numa população suficientemente grande, mas há algumas considerações críticas da modelagem de simulação baseada em indivíduos que serão revisadas nos exemplos a seguir.   
+\end{enumerate}
+
+#Modelo SI Estocástico
+
+Introduz-se a classe de modelos ICM usando o mesmo modelo de parametrização do modelo SI básico do DCM, com uma pessoa infectada, uma taxa de ação de 0.25 por passo de tempo, e uma probabilidade de infecção de 0.2 por ação. O modelo é simulado 10 vezes sobre 300 passos de tempo. Note que as funções de parametrização agora terminam em `.icm`. 
+
+```{r}
+library(EpiModel)
+param <- param.icm(inf.prob = 0.2, act.rate = 0.25)
+init <- init.icm(s.num = 500, i.num = 1)
+control <- control.icm(type = "SI", nsims = 10, nsteps = 300)
+mod <- icm(param, init, control)
+```
+
+Por padrão a função imprime o progresso do modelo. Esse modelo de simulação baseado em agente geralmente demora mais para rodar do que os DCMs, especialmente para populações grandes e taxas de tmepo longas, porque os processos de transmissão devem ser simulados para cada indivíduo em cada passo de tempo. O resultado do modelo pode ser impresso, sumarizado e plotado de forma semelhante aos modledos `dcm`.
+
+```{r}
+mod
+```
+
+Em contraste com a classe de objetos `dcm`, a função `summary` \emph{não toma} um argumento `run`(rodada). A saída sumariza a média e o desvio padrão  dos resultados do modelo no passo de tempo requerido sobre todas as simulações. Aqui, requere-se o sumário no passo de tempo 125; a saída mostra o compartimento e fluxos médios sobre estas 10 simulações.
+
+```{r}
+summary(mod, at = 125)
+```
+
+Os valores do sumário estatístico como média e desvio padrão é de interesse para análise e visualização, então a função `as.data.frame` para objetos `icm` fornece isto. Como descrito na página do help da função (`as.data.frame.icm`) as escolhas para a saída são para um tempo específico para a média, desvio padrão, e valores individuais da simulação.
+
+```{r}
+head(as.data.frame(mod, out = "mean"))
+```
+
+```{r}
+tail(as.data.frame(mod, out = "vals", sim = 1))
+```
+
+##Plotting 
+
+Os resultados gráficos para os modelos estocásticos requer pensar em quais medidas do sumário representam melhor a epidemia. Para alguns modelos é suficiente plotar a média da simulação, mas em outras simulações a visualização individual é necessária. A função `plot` para os modelos `icm` gera uma saída visual simples e robusta. O saída gráfica padrão inclui a média sobre a simulação com sua variação interquartil.Ambos são valores suavizados por padrão.
+
+```{r}
+plot(mod, main="SI Estocástico", xlab="Tempo", ylab="Prevalência")
+```
+
+Cada elemento pode ser ativiado ou desativado usando os argumentos de plot listados em `help("plot.icm")`. Aqui, foram adicionadas linhas de simulação individual para o plot padrão usando `sim.lines` e removendo a suavização das médias e das bandas dos quartis.
+
+```{r}
+plot(mod, y = "i.num", sim.lines = TRUE, mean.smooth = FALSE, qnts.smooth = FALSE)
+```
+
+#Comparação entre o SIR Determinístico e Estocástico
+Uma comparação para comparação da modelagem é como os resultados variam com a estrutura do modelo mantendo os parâmetros epidêmicos constantes. Aqui, mostra-se como comparar um DCM com um ICM para o modelo SIR numa população aberta.Primeiro o modelo determinístico é rodado com os seguintes parâmetros.
+
+```{r}
+param <- param.dcm(inf.prob = 0.2, act.rate = 0.8, rec.rate = 1/50,
+                   b.rate = 1/100, ds.rate = 1/100, di.rate = 1/90, dr.rate = 1/100)
+init <- init.dcm(s.num = 900, i.num = 100, r.num = 0)
+control <- control.dcm(type = "SIR", nsteps = 300)
+det <- dcm(param, init, control)
+```
+Note que 10% da população é configurada como infectada em $t_0$; com apenas uma pessoa inicialmente infectada, tipicamente toma-se tempos discretos, e modelos baseados em indivíduos demoram mais tempo para produzir uma epidemia. Esta é a única propriedade de modelos baseads em agentes que pode ser melhor representada na realidade. Aqui, o objetivo é uma aproximação concisa através da minimização destas diferenças. O modelo `icm` é simulado 10 vezes, com os mesmos parãmetros dos modelos determinísticos. Neste modelo, o contato, a transmissão dado o contato, recuperação, nascimento, e morte são processos governados  por escolhas aleatórias a partir da dsitribuição binomial com parâmetros ajustados pelas taxas especificadas aqui.
+
+```{r}
+param <- param.icm(inf.prob = 0.2, act.rate = 0.8, rec.rate = 1/50,
+                   b.rate = 1/100, ds.rate = 1/100, di.rate = 1/90,
+                   dr.rate = 1/100)
+init <- init.icm(s.num = 900, i.num = 100, r.num = 0)
+control <- control.icm(type = "SIR", nsteps = 300, nsims = 10)
+sim <- icm(param, init, control)
+```
+
+Para um terceiro modelo, pode-se mudar o modelo ICM desativando elementos estocásticos dos processos de nascimento e morte. Ao invés de ajustar o número de novos nascimentos e mortes em cada compartimento para cada passo de tempo como escolhas aleatórias  a partir da distribuição binomial com os parâmetros de taxa ajustados como os argumentos, estes fluxos de transição são calculados arredondando o produto das taxas e o tamanho do estado. Note que pode-se reciclar os  `param` e `init` a partir de modelos prévios.
+
+```{r}
+control <- control.icm(type = "SIR", nsteps = 300, nsims = 10,
+                       b.rand = FALSE, d.rand = FALSE)
+sim2 <- icm(param, init, control)
+```
+##Comparando médias
+No nosso plot, resulatdos determinísticos são mostrados em linhas sólidas, o primeiro resultado estocástico em linhas tracejadas, e o segundo resultado estocástico em linhas pontilhadas. Neste exemplo, as três linhas são geralmente consistentes, que é como esperado dado que estamos visualizando apenas as médias, tem-se uma população suficientemente grande, e as taxas de transição demográficas são relativamente baixas. Note o uso  do argumento `add` para colocar uma nova configuração de linhas no topo de uma janela de plot existente.
+
+```{r}
+plot(det, alpha = 0.75, lwd = 4, main = "DCM and ICM Comparison")
+plot(sim, qnts = FALSE, sim.lines = FALSE, add = TRUE, mean.lty = 2, leg = FALSE)
+plot(sim2, qnts = FALSE, sim.lines = FALSE, add = TRUE, mean.lty = 3, leg = FALSE)
+```
+###Comparando variância
+Não há variabilidade no modelo determonístico, mas a variabilidade entre o segundo e o terceiro modelo é de interesse. Aqui compara-se a variabilidade do fluxo de morte entre infectados no primeiro modelo completamente estocástico e o segundo modelo estocástico limitado com mortes determinísticas. No modelo completamente estocástico há um intervalo relativamente amplo de números de mortes de infectados sobre o tempo considerando que há uma variabilidade pequena no modelo estocástico limitado.
+
+```{r}
+par(mfrow = c(1,2), mar = c(3,3,2,1), mgp = c(2,1,0))
+plot(sim, y = "di.flow", mean.line = FALSE,
+     sim.lines = TRUE, sim.alpha = 0.15, ylim = c(0, 20),
+     main = "di.flow: Full Stochastic Model")
+plot(sim2, y = "di.flow", mean.line = FALSE,
+     sim.lines = TRUE, sim.alpha = 0.15, ylim = c(0, 20),
+     main = "di.flow: Limited Stochastic Model")
+```
+Ainda há variações menores nos fluxos de morte em alguns pontos no tempo por conta de que o número de infectados em cada ponto no tempo continua sendo uma função dos processos de transmissão aleatória no modelo. Para uma análise de variância específica no tempo, pode-se comparar o desvio padrão dos dois resultados do modelo no passo de tempo 50 (quando  a incidência de morte dos infectados atinge seu máximo) usando os dados extraídos através da função `as.data.frame`.
+
+```{r}
+icm.compare <- rbind(round(as.data.frame(sim, out = "sd")[50,], 2),
+                     round(as.data.frame(sim2, out = "sd")[50,], 2))
+row.names(icm.compare) <- c("full", "lim")
+icm.compare
+```
+
+#Modelo SIS com Dois grupos e Demografia
+A seguir modela-se um modelo SIS com dois grupos que se misturam de maneira puramente heterogênea. O modelo é parametrizado de maneira similar ao modelo SIR determinístico para dois grupos caracterizado no Tutorial dos DCMs Básicos. Usa-se a mesma taxa de ação e considerações de balanceamento. Deve-se também especificar as taxas de recuperação específica para cada grupo. Neste modelo, simula-se uma doença na qual o primeiro grupo tem uma probabilidade de infecção duas vezes maior, mas se recupera e retorna ao estado suscetível à uma taxa duas vezes maiordo que o segundo grupo. Isto deve ocorrer, por exemplo, se o primeiro grupo, diferencialmente, teve acesso à tratamentos curativos da doença.    
+
+```{r}
+param <- param.icm(inf.prob = 0.2, inf.prob.g2 = 0.1, act.rate = 0.5, balance = "g1",
+                   rec.rate = 1/25, rec.rate.g2 = 1/50, b.rate = 1/100, b.rate.g2 = NA,
+                   ds.rate = 1/100, ds.rate.g2 = 1/100, di.rate = 1/90, di.rate.g2 = 1/90)
+init <- init.icm(s.num = 500, i.num = 1, s.num.g2 = 500, i.num.g2 = 1)
+control <- control.icm(type = "SIS", nsteps = 500, nsims = 10)
+
+set.seed(1)
+sim <- icm(param, init, control)
+```
+O gráfico mostra uma doença similar sobrecarregada para os dois grupos, com a prevalência da doença de cerca de 20% em ambos os grupos no passo de tempo 400, mas vê-se trajetórias epidêmicas similares para ambos os grupos porque suas probabilidades de transmissão e taxas são balanceadas: ambos os grupos têm um $R_0 = 2.5$.
+
+```{r}
+par(mfrow = c(1,1))
+plot(sim)
+```
+As opções padrão para os gráficos para modelos com dois grupos mostrarão apenas as médias das simulações, então a informação adicional do sumário (quantis e linhas individuais da simulação) devem ser ativadas sempre que necessário. Neste caso. Neste segundo gráfico mostra-se que deve-se ter cuidadopara não olhar apenas para a média da simulação. Neste caso, as linhas médias são das epidemias que ocorrem normalmente em 5 simulações e epidemias extintas em 5 simulações. Extinção de modelos ocorrem neste caso porque  a taxa de recuperação no primeiro grupo é relativamente pequena e há apenas uma pessoa inicialmente infectada.
+
+```{r}
+plot(sim, y = c("i.num", "i.num.g2"), mean.lwd = 3, sim.lines = TRUE, 
+     sim.col = c("steelblue", "firebrick"), leg = TRUE,
+     main = "Disease Prevalence: Means and Individual Simulations")
+```
+Outro diagnóstico útil para este comportamento é encontrado na função sumário, onde pode-se achar que no passo de tempo 400, o núemro de infectados é 97.7, e o desvio padrão em torno desta média é 103.7. Se o fenômeno de extinção do modelo estocástico representa o processo epidêmico subjacente de interesse no qual há um indivíduo inicialmente infectado, esses modelos `icm` tem uitlidade por si só. Mas se o número de infectados inicialmente é arbitrário (ou desconhecido), a extinção do modelo pode ser uma artificialidade a ser removida: neste caso, deve-se aumentar o tamanho total da população (especificamente o número inicial de infectados) ou reduzir o temanho do passo de tempo (e tamb´rm, ajustar os denominadores de parâmetros com unidades de tempo neles). 
+
